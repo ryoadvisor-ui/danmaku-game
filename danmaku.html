@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Moonlit Danmaku</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f7f4ec;
+      --muted: #b9bcc6;
+      --line: #2a303c;
+      --rose: #ff5d8f;
+      --gold: #ffd166;
+      --teal: #4dd4ac;
+      --cyan: #74c7ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 50% -20%, rgba(255, 209, 102, 0.18), transparent 34%),
+        linear-gradient(180deg, #11141b 0%, #08090d 58%, #050608 100%);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1120px, 100vw);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 620px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #07080c;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      min-height: 620px;
+      display: block;
+      touch-action: none;
+    }
+
+    aside {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(20, 24, 32, 0.92);
+      padding: 14px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: -4px 0 2px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat {
+      min-height: 58px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #10141c;
+      padding: 8px 10px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+    }
+
+    .stat span:first-child {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat span:last-child {
+      font-size: 20px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .wide { grid-column: 1 / -1; }
+
+    .meter {
+      height: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #090b10;
+    }
+
+    .meter > div {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--rose), var(--gold));
+      transform-origin: left center;
+      transition: transform 120ms linear;
+    }
+
+    .controls {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .keys {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    kbd {
+      min-width: 30px;
+      min-height: 28px;
+      padding: 3px 8px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-bottom-width: 3px;
+      border-radius: 6px;
+      background: #0d1017;
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #202633;
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 850;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+
+    button:hover,
+    button:focus-visible {
+      border-color: var(--gold);
+      background: #2a3140;
+      outline: none;
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(5, 6, 8, 0.58);
+      backdrop-filter: blur(4px);
+    }
+
+    .overlay[hidden] { display: none; }
+
+    .dialog {
+      width: min(440px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(20, 24, 32, 0.96);
+      padding: 22px;
+      text-align: center;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+    }
+
+    .dialog h2 {
+      margin: 0 0 8px;
+      font-size: 27px;
+      letter-spacing: 0;
+    }
+
+    .dialog p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    @media (max-width: 820px) {
+      main {
+        min-height: auto;
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        order: -1;
+      }
+
+      .stage,
+      canvas {
+        min-height: 640px;
+      }
+
+      .controls {
+        display: none;
+      }
+    }
+
+    @media (max-width: 520px) {
+      main { padding: 8px; gap: 8px; }
+      h1 { font-size: 23px; }
+      .stage,
+      canvas { min-height: 74vh; }
+      .stats { grid-template-columns: repeat(3, 1fr); }
+      .wide { grid-column: 1 / -1; }
+      .stat { min-width: 0; padding: 7px; }
+      .stat span:last-child { font-size: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="stage" aria-label="game area">
+      <canvas id="game" width="720" height="900"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="dialog">
+          <h2 id="message">月明かりの弾幕</h2>
+          <p id="detail">弾を避けながらショットを当てて、夜空のボスを撃破しましょう。Shiftで低速移動、Xでボムです。</p>
+          <button id="startButton">Start</button>
+        </div>
+      </div>
+    </section>
+
+    <aside aria-label="game status">
+      <h1>Moonlit Danmaku</h1>
+      <p class="subtitle">小さな当たり判定で弾幕を抜ける、縦スクロールのオリジナル弾幕ゲーム。</p>
+      <div class="stats">
+        <div class="stat"><span>Score</span><span id="score">0</span></div>
+        <div class="stat"><span>Lives</span><span id="lives">3</span></div>
+        <div class="stat"><span>Bomb</span><span id="bombs">3</span></div>
+        <div class="stat"><span>Graze</span><span id="graze">0</span></div>
+        <div class="stat wide"><span>Boss</span><span id="bossText">100%</span></div>
+      </div>
+      <div class="meter" aria-hidden="true"><div id="bossMeter"></div></div>
+      <button id="pauseButton">Pause</button>
+      <div class="controls">
+        <div class="keys"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd><kbd>WASD</kbd></div>
+        <span>移動</span>
+        <div class="keys"><kbd>Z</kbd><kbd>Space</kbd></div>
+        <span>ショット</span>
+        <div class="keys"><kbd>Shift</kbd></div>
+        <span>低速移動と当たり判定表示</span>
+        <div class="keys"><kbd>X</kbd></div>
+        <span>ボムで弾を消す</span>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+    const bombsEl = document.getElementById('bombs');
+    const grazeEl = document.getElementById('graze');
+    const bossTextEl = document.getElementById('bossText');
+    const bossMeterEl = document.getElementById('bossMeter');
+    const overlay = document.getElementById('overlay');
+    const messageEl = document.getElementById('message');
+    const detailEl = document.getElementById('detail');
+    const startButton = document.getElementById('startButton');
+    const pauseButton = document.getElementById('pauseButton');
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const keys = new Set();
+    const player = { x: W / 2, y: H - 92, r: 4, inv: 0, cooldown: 0, grazeCooldown: 0 };
+    const boss = { x: W / 2, y: 118, hp: 1200, maxHp: 1200, t: 0, phase: 0 };
+    const state = {
+      running: false,
+      paused: false,
+      over: false,
+      score: 0,
+      lives: 3,
+      bombs: 3,
+      graze: 0,
+      time: 0,
+      frame: 0,
+      shake: 0,
+      flash: 0,
+      shotHeld: true,
+      pointer: null
+    };
+
+    let bullets = [];
+    let shots = [];
+    let particles = [];
+    let stars = [];
+    let audioCtx = null;
+    let last = performance.now();
+
+    function rand(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function dist(ax, ay, bx, by) {
+      return Math.hypot(ax - bx, ay - by);
+    }
+
+    function initAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function tone(freq, duration, type = 'sine', gain = 0.035) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const amp = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      amp.gain.setValueAtTime(gain, audioCtx.currentTime);
+      amp.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.connect(amp);
+      amp.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function resetGame() {
+      bullets = [];
+      shots = [];
+      particles = [];
+      stars = Array.from({ length: 96 }, () => ({
+        x: rand(0, W),
+        y: rand(0, H),
+        z: rand(0.3, 1.2),
+        s: rand(0.5, 1.8)
+      }));
+      Object.assign(player, { x: W / 2, y: H - 92, inv: 120, cooldown: 0, grazeCooldown: 0 });
+      Object.assign(boss, { x: W / 2, y: 118, hp: boss.maxHp, t: 0, phase: 0 });
+      Object.assign(state, {
+        running: true,
+        paused: false,
+        over: false,
+        score: 0,
+        lives: 3,
+        bombs: 3,
+        graze: 0,
+        time: 0,
+        frame: 0,
+        shake: 0,
+        flash: 0,
+        shotHeld: true,
+        pointer: null
+      });
+      overlay.hidden = true;
+      pauseButton.textContent = 'Pause';
+      updateHud();
+      tone(523, 0.08, 'triangle', 0.04);
+      tone(784, 0.14, 'triangle', 0.03);
+    }
+
+    function updateHud() {
+      scoreEl.textContent = state.score.toLocaleString('ja-JP');
+      livesEl.textContent = state.lives;
+      bombsEl.textContent = state.bombs;
+      grazeEl.textContent = state.graze;
+      const hpRatio = clamp(boss.hp / boss.maxHp, 0, 1);
+      bossTextEl.textContent = `${Math.ceil(hpRatio * 100)}%`;
+      bossMeterEl.style.transform = `scaleX(${hpRatio})`;
+    }
+
+    function endGame(win) {
+      state.running = false;
+      state.over = true;
+      overlay.hidden = false;
+      messageEl.textContent = win ? '撃破成功' : '満身創痍';
+      detailEl.textContent = win
+        ? `Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。もう一度、さらに美しく避けますか？`
+        : `Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。低速移動で弾の隙間を探すのがコツです。`;
+      startButton.textContent = 'Restart';
+      tone(win ? 880 : 160, 0.18, win ? 'triangle' : 'sawtooth', 0.04);
+    }
+
+    function spawnBullet(x, y, angle, speed, color, size = 6, wave = 0) {
+      bullets.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        r: size,
+        color,
+        wave,
+        t: 0,
+        grazed: false
+      });
+    }
+
+    function burst(x, y, count, color, power = 1) {
+      for (let i = 0; i < count; i++) {
+        const angle = rand(0, Math.PI * 2);
+        const speed = rand(1, 5) * power;
+        particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: rand(24, 48),
+          color
+        });
+      }
+    }
+
+    function firePlayerShots() {
+      if (player.cooldown > 0) return;
+      player.cooldown = keys.has('Shift') ? 6 : 5;
+      shots.push({ x: player.x - 12, y: player.y - 18, vx: -0.5, vy: -13, r: 4, power: 6 });
+      shots.push({ x: player.x + 12, y: player.y - 18, vx: 0.5, vy: -13, r: 4, power: 6 });
+      if (state.frame % 3 === 0) tone(980, 0.025, 'square', 0.008);
+    }
+
+    function fireBossPattern() {
+      boss.t++;
+      boss.x = W / 2 + Math.sin(boss.t * 0.018) * 160;
+      boss.y = 120 + Math.sin(boss.t * 0.032) * 24;
+
+      const ratio = boss.hp / boss.maxHp;
+      boss.phase = ratio > 0.66 ? 0 : ratio > 0.34 ? 1 : 2;
+
+      if (boss.phase === 0 && boss.t % 34 === 0) {
+        for (let i = 0; i < 28; i++) {
+          const angle = i / 28 * Math.PI * 2 + boss.t * 0.018;
+          spawnBullet(boss.x, boss.y, angle, 2.2, '#ff78a7', 6);
+        }
+      }
+
+      if (boss.phase === 1 && boss.t % 5 === 0) {
+        const base = boss.t * 0.115;
+        for (let i = 0; i < 4; i++) {
+          spawnBullet(boss.x, boss.y, base + i * Math.PI / 2, 2.9, '#74c7ff', 5, 0.08);
+        }
+      }
+
+      if (boss.phase === 1 && boss.t % 54 === 0) {
+        const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+        for (let i = -3; i <= 3; i++) {
+          spawnBullet(boss.x, boss.y, aim + i * 0.12, 3.2, '#ffd166', 7);
+        }
+      }
+
+      if (boss.phase === 2 && boss.t % 4 === 0) {
+        const base = boss.t * 0.18;
+        spawnBullet(boss.x, boss.y, base, 3.0, '#ff5d8f', 5, 0.13);
+        spawnBullet(boss.x, boss.y, -base + Math.PI, 3.0, '#4dd4ac', 5, -0.13);
+      }
+
+      if (boss.phase === 2 && boss.t % 72 === 0) {
+        const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+        for (let ring = 0; ring < 3; ring++) {
+          for (let i = -4; i <= 4; i++) {
+            spawnBullet(boss.x, boss.y, aim + i * 0.075, 2.5 + ring * 0.45, '#f7f4ec', 4);
+          }
+        }
+      }
+    }
+
+    function bomb() {
+      if (state.bombs <= 0 || player.inv > 90) return;
+      state.bombs--;
+      state.score += bullets.length * 20;
+      bullets.forEach((bullet) => burst(bullet.x, bullet.y, 2, bullet.color, 0.6));
+      bullets = [];
+      player.inv = 150;
+      state.flash = 22;
+      state.shake = 12;
+      updateHud();
+      tone(196, 0.08, 'sawtooth', 0.06);
+      tone(392, 0.2, 'triangle', 0.045);
+    }
+
+    function takeHit() {
+      if (player.inv > 0) return;
+      state.lives--;
+      state.shake = 16;
+      state.flash = 16;
+      burst(player.x, player.y, 36, '#ff5d8f', 1.1);
+      tone(120, 0.16, 'sawtooth', 0.05);
+      if (state.lives < 0) {
+        endGame(false);
+        return;
+      }
+      bullets = bullets.filter((bullet) => bullet.y < player.y - 80);
+      player.x = W / 2;
+      player.y = H - 92;
+      player.inv = 170;
+      updateHud();
+    }
+
+    function update(dt) {
+      if (!state.running || state.paused) return;
+      state.frame++;
+      state.time += dt;
+      if (state.shake > 0) state.shake--;
+      if (state.flash > 0) state.flash--;
+      if (player.inv > 0) player.inv--;
+      if (player.cooldown > 0) player.cooldown--;
+      if (player.grazeCooldown > 0) player.grazeCooldown--;
+
+      const slow = keys.has('Shift');
+      const speed = slow ? 4.0 : 7.4;
+      let dx = 0;
+      let dy = 0;
+      if (keys.has('ArrowLeft') || keys.has('a')) dx--;
+      if (keys.has('ArrowRight') || keys.has('d')) dx++;
+      if (keys.has('ArrowUp') || keys.has('w')) dy--;
+      if (keys.has('ArrowDown') || keys.has('s')) dy++;
+      if (dx || dy) {
+        const len = Math.hypot(dx, dy);
+        player.x += dx / len * speed;
+        player.y += dy / len * speed;
+      }
+
+      if (state.pointer) {
+        player.x += (state.pointer.x - player.x) * 0.24;
+        player.y += (state.pointer.y - player.y) * 0.24;
+      }
+
+      player.x = clamp(player.x, 22, W - 22);
+      player.y = clamp(player.y, 80, H - 24);
+
+      if (state.shotHeld || keys.has('z') || keys.has(' ')) firePlayerShots();
+      fireBossPattern();
+
+      stars.forEach((star) => {
+        star.y += star.z * 1.4;
+        if (star.y > H) {
+          star.x = rand(0, W);
+          star.y = -8;
+        }
+      });
+
+      shots.forEach((shot) => {
+        shot.x += shot.vx;
+        shot.y += shot.vy;
+      });
+      shots = shots.filter((shot) => shot.y > -20);
+
+      for (const shot of shots) {
+        if (dist(shot.x, shot.y, boss.x, boss.y) < 46) {
+          boss.hp -= shot.power;
+          shot.y = -99;
+          state.score += 12;
+          if (state.frame % 5 === 0) burst(shot.x, shot.y, 3, '#ffd166', 0.5);
+        }
+      }
+      shots = shots.filter((shot) => shot.y > -20);
+
+      bullets.forEach((bullet) => {
+        bullet.t++;
+        if (bullet.wave) {
+          const wobble = Math.sin(bullet.t * 0.05) * bullet.wave;
+          const vx = bullet.vx * Math.cos(wobble) - bullet.vy * Math.sin(wobble);
+          const vy = bullet.vx * Math.sin(wobble) + bullet.vy * Math.cos(wobble);
+          bullet.x += vx;
+          bullet.y += vy;
+        } else {
+          bullet.x += bullet.vx;
+          bullet.y += bullet.vy;
+        }
+
+        const hit = dist(player.x, player.y, bullet.x, bullet.y);
+        if (hit < player.r + bullet.r * 0.55) takeHit();
+        if (!bullet.grazed && hit < 28 + bullet.r && hit > player.r + bullet.r * 0.55) {
+          bullet.grazed = true;
+          state.graze++;
+          state.score += 50;
+          if (player.grazeCooldown === 0) {
+            player.grazeCooldown = 8;
+            tone(1320, 0.03, 'sine', 0.012);
+          }
+        }
+      });
+      bullets = bullets.filter((bullet) => bullet.x > -60 && bullet.x < W + 60 && bullet.y > -80 && bullet.y < H + 80);
+
+      particles.forEach((particle) => {
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.vx *= 0.96;
+        particle.vy *= 0.96;
+        particle.life--;
+      });
+      particles = particles.filter((particle) => particle.life > 0);
+
+      if (boss.hp <= 0) {
+        boss.hp = 0;
+        state.score += 50000 + state.lives * 5000 + state.bombs * 2500;
+        burst(boss.x, boss.y, 90, '#ffd166', 1.5);
+        updateHud();
+        endGame(true);
+        return;
+      }
+
+      if (state.frame % 6 === 0) updateHud();
+    }
+
+    function drawBackground() {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#12161f');
+      sky.addColorStop(0.55, '#07080c');
+      sky.addColorStop(1, '#030406');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      stars.forEach((star) => {
+        ctx.fillStyle = star.z > 0.9 ? '#f7f4ec' : '#81899a';
+        ctx.fillRect(star.x, star.y, star.s, star.s);
+      });
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.strokeStyle = '#74c7ff';
+      ctx.lineWidth = 1;
+      for (let y = (state.frame * 0.8) % 48; y < H; y += 48) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawBoss() {
+      ctx.save();
+      ctx.translate(boss.x, boss.y);
+      ctx.rotate(Math.sin(boss.t * 0.03) * 0.08);
+      const aura = ctx.createRadialGradient(0, 0, 8, 0, 0, 82);
+      aura.addColorStop(0, 'rgba(255, 209, 102, 0.36)');
+      aura.addColorStop(1, 'rgba(255, 209, 102, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, 0, 82, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#231d2b';
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -42);
+      ctx.bezierCurveTo(40, -32, 48, 26, 0, 42);
+      ctx.bezierCurveTo(-48, 26, -40, -32, 0, -42);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ff5d8f';
+      ctx.beginPath();
+      ctx.arc(-14, -6, 5, 0, Math.PI * 2);
+      ctx.arc(14, -6, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#74c7ff';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        ctx.rotate(Math.PI / 3);
+        ctx.beginPath();
+        ctx.moveTo(0, -54);
+        ctx.lineTo(0, -74);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      if (player.inv > 0 && Math.floor(player.inv / 6) % 2 === 0) ctx.globalAlpha = 0.45;
+
+      ctx.fillStyle = '#4dd4ac';
+      ctx.strokeStyle = '#f7f4ec';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -18);
+      ctx.lineTo(15, 14);
+      ctx.lineTo(0, 7);
+      ctx.lineTo(-15, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(0, -4, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (keys.has('Shift') || state.pointer) {
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = '#ff5d8f';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, player.r + 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function draw() {
+      const sx = state.shake ? rand(-state.shake, state.shake) * 0.35 : 0;
+      const sy = state.shake ? rand(-state.shake, state.shake) * 0.35 : 0;
+      ctx.save();
+      ctx.translate(sx, sy);
+      drawBackground();
+      drawBoss();
+
+      shots.forEach((shot) => {
+        ctx.fillStyle = '#f7f4ec';
+        ctx.beginPath();
+        ctx.ellipse(shot.x, shot.y, shot.r, shot.r * 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#74c7ff';
+        ctx.beginPath();
+        ctx.arc(shot.x, shot.y + 5, 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      bullets.forEach((bullet) => {
+        ctx.save();
+        ctx.translate(bullet.x, bullet.y);
+        ctx.fillStyle = bullet.color;
+        ctx.strokeStyle = '#f7f4ec';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, bullet.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.55;
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      particles.forEach((particle) => {
+        ctx.globalAlpha = clamp(particle.life / 36, 0, 1);
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      drawPlayer();
+
+      if (state.flash > 0) {
+        ctx.fillStyle = `rgba(247, 244, 236, ${state.flash / 70})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.restore();
+    }
+
+    function loop(now) {
+      const dt = Math.min(32, now - last);
+      last = now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    startButton.addEventListener('click', () => {
+      initAudio();
+      resetGame();
+    });
+
+    pauseButton.addEventListener('click', () => {
+      if (!state.running) return;
+      state.paused = !state.paused;
+      pauseButton.textContent = state.paused ? 'Resume' : 'Pause';
+      overlay.hidden = !state.paused;
+      if (state.paused) {
+        messageEl.textContent = 'Pause';
+        detailEl.textContent = '少し休憩中。Resumeで再開します。';
+        startButton.textContent = 'Restart';
+      }
+    });
+
+    window.addEventListener('keydown', (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      keys.add(key);
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Shift'].includes(event.key)) {
+        event.preventDefault();
+      }
+      if (key === 'x') bomb();
+      if ((key === 'z' || key === ' ') && !state.running) {
+        initAudio();
+        resetGame();
+      }
+    });
+
+    window.addEventListener('keyup', (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      keys.delete(key);
+    });
+
+    function updatePointer(event) {
+      const rect = canvas.getBoundingClientRect();
+      state.pointer = {
+        x: (event.clientX - rect.left) / rect.width * W,
+        y: (event.clientY - rect.top) / rect.height * H
+      };
+    }
+
+    canvas.addEventListener('pointerdown', (event) => {
+      canvas.setPointerCapture(event.pointerId);
+      state.shotHeld = true;
+      updatePointer(event);
+      if (!state.running) {
+        initAudio();
+        resetGame();
+      }
+    });
+
+    canvas.addEventListener('pointermove', updatePointer);
+    canvas.addEventListener('pointerup', (event) => {
+      canvas.releasePointerCapture(event.pointerId);
+      state.pointer = null;
+    });
+    canvas.addEventListener('pointercancel', () => {
+      state.pointer = null;
+    });
+
+    stars = Array.from({ length: 96 }, () => ({
+      x: rand(0, W),
+      y: rand(0, H),
+      z: rand(0.3, 1.2),
+      s: rand(0.5, 1.8)
+    }));
+    draw();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
