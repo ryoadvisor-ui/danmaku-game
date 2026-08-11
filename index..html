@@ -212,6 +212,25 @@
       line-height: 1.7;
     }
 
+    .difficulty {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    .difficulty button {
+      min-height: 38px;
+      padding: 0 8px;
+      font-size: 13px;
+    }
+
+    .difficulty button[aria-pressed="true"] {
+      border-color: var(--gold);
+      background: #342d1a;
+      color: var(--gold);
+    }
+
     @media (max-width: 820px) {
       main {
         min-height: auto;
@@ -252,6 +271,11 @@
         <div class="dialog">
           <h2 id="message">月明かりの弾幕</h2>
           <p id="detail">弾を避けながらショットを当てて、夜空のボスを撃破しましょう。Shiftで低速移動、Xでボムです。</p>
+          <div class="difficulty" aria-label="difficulty">
+            <button class="difficultyButton" type="button" data-difficulty="easy" aria-pressed="false">Easy</button>
+            <button class="difficultyButton" type="button" data-difficulty="normal" aria-pressed="true">Normal</button>
+            <button class="difficultyButton" type="button" data-difficulty="hard" aria-pressed="false">Hard</button>
+          </div>
           <button id="startButton">Start</button>
         </div>
       </div>
@@ -296,12 +320,18 @@
     const detailEl = document.getElementById('detail');
     const startButton = document.getElementById('startButton');
     const pauseButton = document.getElementById('pauseButton');
+    const difficultyButtons = document.querySelectorAll('.difficultyButton');
 
     const W = canvas.width;
     const H = canvas.height;
     const keys = new Set();
     const player = { x: W / 2, y: H - 92, r: 4, inv: 0, cooldown: 0, grazeCooldown: 0 };
     const boss = { x: W / 2, y: 118, hp: 1200, maxHp: 1200, t: 0, phase: 0 };
+    const difficulties = {
+      easy: { label: 'Easy', bossHp: 850, lives: 5, bombs: 4, bulletSpeed: 0.82, bulletRate: 1.35, bulletCount: 0.72, score: 0.85 },
+      normal: { label: 'Normal', bossHp: 1200, lives: 3, bombs: 3, bulletSpeed: 1, bulletRate: 1, bulletCount: 1, score: 1 },
+      hard: { label: 'Hard', bossHp: 1550, lives: 2, bombs: 2, bulletSpeed: 1.18, bulletRate: 0.78, bulletCount: 1.35, score: 1.25 }
+    };
     const state = {
       running: false,
       paused: false,
@@ -314,6 +344,10 @@
       frame: 0,
       shake: 0,
       flash: 0,
+      difficulty: 'normal',
+      victorySequence: false,
+      victoryTimer: 0,
+      victoryAwarded: false,
       shotHeld: true,
       pointer: null
     };
@@ -323,6 +357,7 @@
     let particles = [];
     let stars = [];
     let audioCtx = null;
+    let bgm = null;
     let last = performance.now();
 
     function rand(min, max) {
@@ -337,9 +372,41 @@
       return Math.hypot(ax - bx, ay - by);
     }
 
+    function currentDifficulty() {
+      return difficulties[state.difficulty];
+    }
+
+    function difficultyInterval(frames) {
+      return Math.max(1, Math.round(frames * currentDifficulty().bulletRate));
+    }
+
+    function difficultyCount(count) {
+      return Math.max(1, Math.round(count * currentDifficulty().bulletCount));
+    }
+
+    function setDifficulty(value) {
+      if (!difficulties[value] || state.running) return;
+      state.difficulty = value;
+      difficultyButtons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.difficulty === value));
+      });
+    }
+
     function initAudio() {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
+      startBgm();
+    }
+
+    function startBgm() {
+      if (!bgm) {
+        bgm = new Audio('Beyond_the_Last_Gate.mp3');
+        bgm.loop = true;
+        bgm.volume = 0.05;
+      }
+      if (bgm.paused) {
+        bgm.play().catch(() => {});
+      }
     }
 
     function tone(freq, duration, type = 'sine', gain = 0.035) {
@@ -366,20 +433,24 @@
         z: rand(0.3, 1.2),
         s: rand(0.5, 1.8)
       }));
+      const difficulty = currentDifficulty();
       Object.assign(player, { x: W / 2, y: H - 92, inv: 120, cooldown: 0, grazeCooldown: 0 });
-      Object.assign(boss, { x: W / 2, y: 118, hp: boss.maxHp, t: 0, phase: 0 });
+      Object.assign(boss, { x: W / 2, y: 118, hp: difficulty.bossHp, maxHp: difficulty.bossHp, t: 0, phase: 0 });
       Object.assign(state, {
         running: true,
         paused: false,
         over: false,
         score: 0,
-        lives: 3,
-        bombs: 3,
+        lives: difficulty.lives,
+        bombs: difficulty.bombs,
         graze: 0,
         time: 0,
         frame: 0,
         shake: 0,
         flash: 0,
+        victorySequence: false,
+        victoryTimer: 0,
+        victoryAwarded: false,
         shotHeld: true,
         pointer: null
       });
@@ -406,18 +477,39 @@
       overlay.hidden = false;
       messageEl.textContent = win ? '撃破成功' : '満身創痍';
       detailEl.textContent = win
-        ? `Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。もう一度、さらに美しく避けますか？`
-        : `Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。低速移動で弾の隙間を探すのがコツです。`;
+        ? `${currentDifficulty().label} / Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。もう一度、さらに美しく避けますか？`
+        : `${currentDifficulty().label} / Score ${state.score.toLocaleString('ja-JP')} / Graze ${state.graze}。低速移動で弾の隙間を探すのがコツです。`;
       startButton.textContent = 'Restart';
       tone(win ? 880 : 160, 0.18, win ? 'triangle' : 'sawtooth', 0.04);
     }
 
+    function startBossDefeat() {
+      if (state.victorySequence) return;
+      boss.hp = 0;
+      state.victorySequence = true;
+      state.victoryTimer = 0;
+      state.shake = 30;
+      state.flash = 28;
+      bullets = [];
+      shots = [];
+      if (!state.victoryAwarded) {
+        state.victoryAwarded = true;
+        state.score += Math.round((50000 + state.lives * 5000 + state.bombs * 2500) * currentDifficulty().score);
+      }
+      burst(boss.x, boss.y, 130, '#ffd166', 1.7);
+      burst(boss.x, boss.y, 80, '#ff5d8f', 1.35);
+      updateHud();
+      tone(110, 0.12, 'sawtooth', 0.06);
+      tone(220, 0.18, 'triangle', 0.045);
+    }
+
     function spawnBullet(x, y, angle, speed, color, size = 6, wave = 0) {
+      const tunedSpeed = speed * currentDifficulty().bulletSpeed;
       bullets.push({
         x,
         y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
+        vx: Math.cos(angle) * tunedSpeed,
+        vy: Math.sin(angle) * tunedSpeed,
         r: size,
         color,
         wave,
@@ -457,38 +549,48 @@
       const ratio = boss.hp / boss.maxHp;
       boss.phase = ratio > 0.66 ? 0 : ratio > 0.34 ? 1 : 2;
 
-      if (boss.phase === 0 && boss.t % 34 === 0) {
-        for (let i = 0; i < 28; i++) {
-          const angle = i / 28 * Math.PI * 2 + boss.t * 0.018;
+      if (boss.phase === 0 && boss.t % difficultyInterval(34) === 0) {
+        const rings = difficultyCount(28);
+        for (let i = 0; i < rings; i++) {
+          const angle = i / rings * Math.PI * 2 + boss.t * 0.018;
           spawnBullet(boss.x, boss.y, angle, 2.2, '#ff78a7', 6);
         }
       }
 
-      if (boss.phase === 1 && boss.t % 5 === 0) {
+      if (boss.phase === 1 && boss.t % difficultyInterval(5) === 0) {
         const base = boss.t * 0.115;
-        for (let i = 0; i < 4; i++) {
-          spawnBullet(boss.x, boss.y, base + i * Math.PI / 2, 2.9, '#74c7ff', 5, 0.08);
+        const arms = difficultyCount(4);
+        for (let i = 0; i < arms; i++) {
+          spawnBullet(boss.x, boss.y, base + i * Math.PI * 2 / arms, 2.9, '#74c7ff', 5, 0.08);
         }
       }
 
-      if (boss.phase === 1 && boss.t % 54 === 0) {
+      if (boss.phase === 1 && boss.t % difficultyInterval(54) === 0) {
         const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
-        for (let i = -3; i <= 3; i++) {
-          spawnBullet(boss.x, boss.y, aim + i * 0.12, 3.2, '#ffd166', 7);
+        const fan = difficultyCount(7);
+        const half = (fan - 1) / 2;
+        for (let i = 0; i < fan; i++) {
+          spawnBullet(boss.x, boss.y, aim + (i - half) * 0.12, 3.2, '#ffd166', 7);
         }
       }
 
-      if (boss.phase === 2 && boss.t % 4 === 0) {
+      if (boss.phase === 2 && boss.t % difficultyInterval(4) === 0) {
         const base = boss.t * 0.18;
         spawnBullet(boss.x, boss.y, base, 3.0, '#ff5d8f', 5, 0.13);
         spawnBullet(boss.x, boss.y, -base + Math.PI, 3.0, '#4dd4ac', 5, -0.13);
+        if (state.difficulty === 'hard') {
+          spawnBullet(boss.x, boss.y, base + Math.PI / 2, 2.7, '#ffd166', 4, 0.1);
+        }
       }
 
-      if (boss.phase === 2 && boss.t % 72 === 0) {
+      if (boss.phase === 2 && boss.t % difficultyInterval(72) === 0) {
         const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
-        for (let ring = 0; ring < 3; ring++) {
-          for (let i = -4; i <= 4; i++) {
-            spawnBullet(boss.x, boss.y, aim + i * 0.075, 2.5 + ring * 0.45, '#f7f4ec', 4);
+        const rings = state.difficulty === 'easy' ? 2 : state.difficulty === 'hard' ? 4 : 3;
+        const fan = difficultyCount(9);
+        const half = (fan - 1) / 2;
+        for (let ring = 0; ring < rings; ring++) {
+          for (let i = 0; i < fan; i++) {
+            spawnBullet(boss.x, boss.y, aim + (i - half) * 0.075, 2.5 + ring * 0.45, '#f7f4ec', 4);
           }
         }
       }
@@ -535,6 +637,36 @@
       if (player.inv > 0) player.inv--;
       if (player.cooldown > 0) player.cooldown--;
       if (player.grazeCooldown > 0) player.grazeCooldown--;
+
+      if (state.victorySequence) {
+        state.victoryTimer++;
+        boss.t += 2;
+        state.shake = Math.max(state.shake, state.victoryTimer < 72 ? 18 : 6);
+        if (state.victoryTimer % 8 === 0) {
+          const angle = rand(0, Math.PI * 2);
+          const radius = rand(8, 58);
+          const x = boss.x + Math.cos(angle) * radius;
+          const y = boss.y + Math.sin(angle) * radius;
+          burst(x, y, 26, state.victoryTimer % 16 === 0 ? '#ffd166' : '#ff5d8f', 1.1);
+          tone(rand(120, 260), 0.045, 'sawtooth', 0.025);
+        }
+        if (state.victoryTimer === 44) state.flash = 22;
+        if (state.victoryTimer === 84) {
+          state.flash = 34;
+          burst(boss.x, boss.y, 180, '#f7f4ec', 2.2);
+          tone(880, 0.18, 'triangle', 0.035);
+        }
+        particles.forEach((particle) => {
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+          particle.vx *= 0.96;
+          particle.vy *= 0.96;
+          particle.life--;
+        });
+        particles = particles.filter((particle) => particle.life > 0);
+        if (state.victoryTimer > 128) endGame(true);
+        return;
+      }
 
       const slow = keys.has('Shift');
       const speed = slow ? 4.0 : 7.4;
@@ -617,11 +749,7 @@
       particles = particles.filter((particle) => particle.life > 0);
 
       if (boss.hp <= 0) {
-        boss.hp = 0;
-        state.score += 50000 + state.lives * 5000 + state.bombs * 2500;
-        burst(boss.x, boss.y, 90, '#ffd166', 1.5);
-        updateHud();
-        endGame(true);
+        startBossDefeat();
         return;
       }
 
@@ -658,9 +786,16 @@
     }
 
     function drawBoss() {
+      if (boss.hp <= 0 && !state.victorySequence) return;
       ctx.save();
-      ctx.translate(boss.x, boss.y);
-      ctx.rotate(Math.sin(boss.t * 0.03) * 0.08);
+      const collapse = state.victorySequence ? clamp(state.victoryTimer / 100, 0, 1) : 0;
+      ctx.globalAlpha = 1 - collapse * 0.88;
+      ctx.translate(
+        boss.x + (collapse ? rand(-10, 10) * collapse : 0),
+        boss.y + (collapse ? rand(-8, 8) * collapse : 0)
+      );
+      ctx.rotate(Math.sin(boss.t * 0.03) * 0.08 + collapse * Math.sin(boss.t * 0.2) * 0.35);
+      ctx.scale(1 + collapse * 0.18, 1 + collapse * 0.18);
       const aura = ctx.createRadialGradient(0, 0, 8, 0, 0, 82);
       aura.addColorStop(0, 'rgba(255, 209, 102, 0.36)');
       aura.addColorStop(1, 'rgba(255, 209, 102, 0)');
@@ -678,6 +813,19 @@
       ctx.bezierCurveTo(-48, 26, -40, -32, 0, -42);
       ctx.fill();
       ctx.stroke();
+
+      if (state.victorySequence) {
+        ctx.strokeStyle = '#f7f4ec';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-28, -24);
+        ctx.lineTo(-6, -4);
+        ctx.lineTo(-20, 24);
+        ctx.moveTo(26, -28);
+        ctx.lineTo(8, -2);
+        ctx.lineTo(30, 18);
+        ctx.stroke();
+      }
 
       ctx.fillStyle = '#ff5d8f';
       ctx.beginPath();
@@ -792,6 +940,10 @@
     startButton.addEventListener('click', () => {
       initAudio();
       resetGame();
+    });
+
+    difficultyButtons.forEach((button) => {
+      button.addEventListener('click', () => setDifficulty(button.dataset.difficulty));
     });
 
     pauseButton.addEventListener('click', () => {
